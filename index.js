@@ -16,7 +16,6 @@ const waClient = new WAClient({
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--single-process',
             '--disable-gpu'
         ]
     }
@@ -49,37 +48,29 @@ waClient.on('disconnected', () => {
 
 discordClient.on('messageCreate', async (message) => {
     if (message.author.bot) return;
-
     const contenido = message.content;
-
     if (contenido.startsWith('!mensaje:')) {
         const texto = contenido.slice('!mensaje:'.length).trim();
-
         if (!texto) {
             message.reply('⚠️ Escribe algo después de !mensaje:');
             return;
         }
-
         if (!waReady) {
             message.reply('❌ WhatsApp no está conectado todavía.');
             return;
         }
-
         try {
             const contacts = await waClient.getContacts();
             const contacto = contacts.find(c =>
                 c.name === NOMBRE_CONTACTO_WA ||
                 c.pushname === NOMBRE_CONTACTO_WA
             );
-
             if (!contacto) {
                 message.reply(`❌ No encontré el contacto "${NOMBRE_CONTACTO_WA}"`);
                 return;
             }
-
             await waClient.sendMessage(contacto.id._serialized, texto);
             message.reply(`✅ Enviado a ${NOMBRE_CONTACTO_WA}: "${texto}"`);
-
         } catch (error) {
             console.error('Error:', error);
             message.reply('❌ Error al enviar el mensaje.');
