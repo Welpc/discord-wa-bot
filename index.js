@@ -3,13 +3,15 @@ const { Client: WAClient, LocalAuth, MessageTypes } = require('whatsapp-web.js')
 const qrcode = require('qrcode-terminal');
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+const DISCORD_CANAL_ID = process.env.CANAL_ID;
 
 const CONTACTOS = {
     '1': { nombre: 'Abraham 2 🤑 🤙', comando: '!mensaje1' },
-    '2': { nombre: 'LOVLY Ana 🥺❤️', comando: '!mensaje2' }
+    '2': { nombre: 'LOVLY Ana 🥺❤️', comando: '!mensaje2' },
+    '3': { nombre: 'Eliab 2', comando: '!mensaje3' }
 };
 
-const DISCORD_CANAL_ID = process.env.CANAL_ID;
+let silencio = false;
 
 const waClient = new WAClient({
     authStrategy: new LocalAuth(),
@@ -53,9 +55,10 @@ waClient.on('disconnected', () => {
     waReady = false;
 });
 
-// Monitor de mensajes entrantes de WhatsApp
 waClient.on('message', async (msg) => {
     try {
+        if (silencio) return;
+
         const contact = await msg.getContact();
         const nombreContacto = contact.name || contact.pushname || contact.number;
 
@@ -89,10 +92,21 @@ waClient.on('message', async (msg) => {
     }
 });
 
-// Enviar mensajes desde Discord a WhatsApp
 discordClient.on('messageCreate', async (message) => {
     if (message.author.bot) return;
-    const contenido = message.content;
+    const contenido = message.content.trim();
+
+    if (contenido === '!silencio') {
+        silencio = true;
+        message.reply('🔇 Modo silencio activado — ya no recibirás mensajes de los contactos.');
+        return;
+    }
+
+    if (contenido === '!hablar') {
+        silencio = false;
+        message.reply('🔊 Modo hablar activado — volverás a recibir mensajes de los contactos.');
+        return;
+    }
 
     let contactoDestino = null;
 
@@ -100,15 +114,16 @@ discordClient.on('messageCreate', async (message) => {
         contactoDestino = CONTACTOS['1'];
     } else if (contenido.startsWith('!mensaje2')) {
         contactoDestino = CONTACTOS['2'];
+    } else if (contenido.startsWith('!mensaje3')) {
+        contactoDestino = CONTACTOS['3'];
     }
 
     if (!contactoDestino) return;
 
-    const comando = contactoDestino.comando;
-    const texto = contenido.slice(comando.length).replace(/^:\s*/, '').trim();
+    const texto = contenido.slice(contactoDestino.comando.length).replace(/^:\s*/, '').trim();
 
     if (!texto) {
-        message.reply(`⚠️ Escribe algo después de ${comando}:`);
+        message.reply(`⚠️ Escribe algo después de ${contactoDestino.comando}:`);
         return;
     }
 
