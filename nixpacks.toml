@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ["chromium", "glib", "nss", "atk", "cups", "dbus", "libdrm", "pango", "cairo", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr"]
-
-[phases.build]
-cmds = ["npm install"]
-
-[start]
-cmd = "PUPPETEER_EXECUTABLE_PATH=$(which chromium) node index.js"
