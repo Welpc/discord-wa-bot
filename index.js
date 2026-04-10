@@ -9,7 +9,6 @@ const waClient = new WAClient({
     authStrategy: new LocalAuth(),
     puppeteer: {
         headless: true,
-        executablePath: '/run/current-system/sw/bin/chromium',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
