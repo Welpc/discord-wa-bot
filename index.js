@@ -3,7 +3,7 @@ const { Client: WAClient, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const NOMBRE_CONTACTO_WA = 'Abraham 2';
+const NOMBRE_CONTACTO_WA = 'Abraham 2 🤑 👍';
 
 const waClient = new WAClient({
     authStrategy: new LocalAuth(),
