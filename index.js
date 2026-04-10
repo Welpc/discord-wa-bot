@@ -9,7 +9,7 @@ const DISCORD_CANAL_ID = process.env.CANAL_ID;
 const CONTACTOS = {
     '1': { nombre: 'Abraham 2 🤑 🤙', comando: '!mensaje1' },
     '2': { nombre: 'LOVLY Ana 🥺❤', comando: '!mensaje2' },
-    '3': { nombre: 'Préstamos personales', comando: '!mensaje3' }
+    '3': { nombre: 'Eliab 2', comando: '!mensaje3' }
 };
 
 let silencio = false;
@@ -58,6 +58,7 @@ waClient.on('disconnected', () => {
 
 waClient.on('message', async (msg) => {
     try {
+        console.log('📨 Mensaje recibido tipo:', msg.type, '| de:', msg.from);
         if (silencio) return;
 
         const contact = await msg.getContact();
