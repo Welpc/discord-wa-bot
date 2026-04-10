@@ -9,7 +9,7 @@ const DISCORD_CANAL_ID = process.env.CANAL_ID;
 const CONTACTOS = {
     '1': { nombre: 'Abraham 2 🤑 🤙', comando: '!mensaje1' },
     '2': { nombre: 'LOVLY Ana 🥺❤', comando: '!mensaje2' },
-    '3': { nombre: 'Eliab 2', comando: '!mensaje3' }
+    '3': { nombre: 'Préstamos personales', comando: '!mensaje3' }
 };
 
 let silencio = false;
