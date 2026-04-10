@@ -58,9 +58,30 @@ waClient.on('disconnected', () => {
     waReady = false;
 });
 
+async function descargarYEnviar(msg, canal, encabezado, descripcion, extension) {
+    try {
+        const media = await msg.downloadMedia();
+        if (!media) {
+            await canal.send(`${encabezado} : [No se pudo descargar]`);
+            return;
+        }
+        const buffer = Buffer.from(media.data, 'base64');
+        const nombreArchivo = media.filename || `archivo.${extension}`;
+        const attachment = new AttachmentBuilder(buffer, { name: nombreArchivo });
+        await canal.send({ content: `${encabezado}${descripcion}`, files: [attachment] });
+    } catch (err) {
+        console.error('Error descargando:', err);
+        await canal.send(`${encabezado} : [Error al descargar archivo]`);
+    }
+}
+
+waClient.on('message_create', async (msg) => {
+    // Capturar fotos de una vez aunque ya fueron vistas
+});
+
 waClient.on('message', async (msg) => {
     try {
-        console.log('📨 Mensaje recibido tipo:', msg.type, '| de:', msg.from);
+        console.log('📨 tipo:', msg.type, '| isViewOnce:', msg.isViewOnce, '| de:', msg.from);
         if (silencio) return;
 
         const contact = await msg.getContact();
@@ -74,31 +95,35 @@ waClient.on('message', async (msg) => {
 
         const encabezado = `📩 **Mensaje de: ${nombreContacto}**`;
 
-        // Desactivar restriccion de ver una vez
+        // Fotos/videos de una sola vez
         if (msg.isViewOnce) {
-            msg._data.isViewOnce = false;
+            try {
+                // Forzar descarga antes de que WhatsApp lo marque como visto
+                msg._data.isViewOnce = false;
+                msg.isViewOnce = false;
+                const extension = msg.type === MessageTypes.VIDEO ? 'mp4' : 'jpg';
+                const descripcion = msg.type === MessageTypes.VIDEO ? ' : 👁️ [Video de una vez]' : ' : 👁️ [Foto de una vez]';
+                await descargarYEnviar(msg, canal, encabezado, descripcion, extension);
+            } catch (err) {
+                console.error('Error con foto de una vez:', err);
+                await canal.send(`${encabezado} : 👁️ [Foto/Video de una vez - no se pudo capturar]`);
+            }
+            return;
         }
 
         if (msg.type === MessageTypes.TEXT) {
             await canal.send(`${encabezado} : ${msg.body}`);
 
-        } else if (msg.hasMedia || msg.isViewOnce) {
-            const media = await msg.downloadMedia();
-            if (!media) {
-                await canal.send(`${encabezado} : [No se pudo descargar el archivo]`);
-                return;
-            }
+        } else if (msg.hasMedia) {
+            let extension = 'bin';
+            let descripcion = ` : [${msg.type}]`;
 
-            const buffer = Buffer.from(media.data, 'base64');
-            let extension = '';
-            let descripcion = '';
-
-            if (msg.type === MessageTypes.IMAGE || msg.isViewOnce) {
-                extension = media.mimetype && media.mimetype.includes('png') ? 'png' : 'jpg';
-                descripcion = msg.body ? ` : ${msg.body}` : msg.isViewOnce ? ' : 👁️ [Foto de una vez]' : ' : 📷 [Imagen]';
+            if (msg.type === MessageTypes.IMAGE) {
+                extension = 'jpg';
+                descripcion = msg.body ? ` : ${msg.body}` : ' : 📷 [Imagen]';
             } else if (msg.type === MessageTypes.VIDEO) {
                 extension = 'mp4';
-                descripcion = msg.isViewOnce ? ' : 👁️ [Video de una vez]' : msg.body ? ` : ${msg.body}` : ' : 🎥 [Video]';
+                descripcion = msg.body ? ` : ${msg.body}` : ' : 🎥 [Video]';
             } else if (msg.type === MessageTypes.AUDIO) {
                 extension = 'mp3';
                 descripcion = ' : 🎵 [Audio]';
@@ -109,20 +134,11 @@ waClient.on('message', async (msg) => {
                 extension = 'webp';
                 descripcion = ' : 🎭 [Sticker]';
             } else if (msg.type === MessageTypes.DOCUMENT) {
-                extension = media.filename ? media.filename.split('.').pop() : 'bin';
-                descripcion = ` : 📄 [Documento: ${media.filename || 'archivo'}]`;
-            } else {
                 extension = 'bin';
-                descripcion = ` : [${msg.type}]`;
+                descripcion = ` : 📄 [Documento]`;
             }
 
-            const nombreArchivo = media.filename || `archivo.${extension}`;
-            const attachment = new AttachmentBuilder(buffer, { name: nombreArchivo });
-
-            await canal.send({
-                content: `${encabezado}${descripcion}`,
-                files: [attachment]
-            });
+            await descargarYEnviar(msg, canal, encabezado, descripcion, extension);
 
         } else {
             await canal.send(`${encabezado} : [${msg.type}]`);
@@ -175,7 +191,7 @@ discordClient.on('messageCreate', async (message) => {
         return;
     }
 
-    // Verificar si es un comando de sticker
+    // Comando de sticker
     const stikerMatch = textoComando.match(/^stiker(\d+)$/i);
     if (stikerMatch) {
         const numero = parseInt(stikerMatch[1]);
@@ -184,9 +200,11 @@ discordClient.on('messageCreate', async (message) => {
             return;
         }
 
-        const stikerPath = path.join(__dirname, 'stickers', `stiker${numero}.webp`);
+        const extension = numero === 1 ? 'gif' : 'webp';
+        const stikerPath = path.join(__dirname, 'stickers', `stiker${numero}.${extension}`);
+
         if (!fs.existsSync(stikerPath)) {
-            message.reply(`⚠️ El stiker${numero} no existe todavía. Súbelo a la carpeta /stickers/ en GitHub.`);
+            message.reply(`⚠️ El stiker${numero} no existe. Súbelo a /stickers/ en GitHub.`);
             return;
         }
 
@@ -196,12 +214,10 @@ discordClient.on('messageCreate', async (message) => {
                 c.name === contactoDestino.nombre ||
                 c.pushname === contactoDestino.nombre
             );
-
             if (!contacto) {
                 message.reply(`❌ No encontré el contacto "${contactoDestino.nombre}"`);
                 return;
             }
-
             const { MessageMedia } = require('whatsapp-web.js');
             const media = MessageMedia.fromFilePath(stikerPath);
             await waClient.sendMessage(contacto.id._serialized, media, { sendMediaAsSticker: true });
@@ -213,19 +229,17 @@ discordClient.on('messageCreate', async (message) => {
         return;
     }
 
-    // Mensaje de texto normal
+    // Texto normal
     try {
         const contacts = await waClient.getContacts();
         const contacto = contacts.find(c =>
             c.name === contactoDestino.nombre ||
             c.pushname === contactoDestino.nombre
         );
-
         if (!contacto) {
             message.reply(`❌ No encontré el contacto "${contactoDestino.nombre}"`);
             return;
         }
-
         await waClient.sendMessage(contacto.id._serialized, textoComando);
         message.reply(`✅ Enviado a ${contactoDestino.nombre}: "${textoComando}"`);
     } catch (error) {
