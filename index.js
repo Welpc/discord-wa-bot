@@ -1,5 +1,6 @@
 const { Client: DiscordClient, GatewayIntentBits } = require('discord.js');
 const { Client: WAClient, LocalAuth, MessageTypes } = require('whatsapp-web.js');
+const { AttachmentBuilder } = require('discord.js');
 const qrcode = require('qrcode-terminal');
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
@@ -7,7 +8,7 @@ const DISCORD_CANAL_ID = process.env.CANAL_ID;
 
 const CONTACTOS = {
     '1': { nombre: 'Abraham 2 🤑 🤙', comando: '!mensaje1' },
-    '2': { nombre: 'LOVLY Ana 🥺❤️', comando: '!mensaje2' },
+    '2': { nombre: 'LOVLY Ana 🥺❤', comando: '!mensaje2' },
     '3': { nombre: 'Eliab 2', comando: '!mensaje3' }
 };
 
@@ -65,28 +66,68 @@ waClient.on('message', async (msg) => {
         const esMonitoreado = Object.values(CONTACTOS).some(c => c.nombre === nombreContacto);
         if (!esMonitoreado) return;
 
-        let contenidoMensaje = '';
+        const canal = await discordClient.channels.fetch(DISCORD_CANAL_ID);
+        if (!canal) return;
+
+        const encabezado = `📩 **Mensaje de: ${nombreContacto}**`;
 
         if (msg.type === MessageTypes.TEXT) {
-            contenidoMensaje = msg.body;
-        } else if (msg.type === MessageTypes.IMAGE) {
-            contenidoMensaje = '📷 [Imagen]';
-        } else if (msg.type === MessageTypes.VIDEO) {
-            contenidoMensaje = '🎥 [Video]';
-        } else if (msg.type === MessageTypes.AUDIO || msg.type === MessageTypes.VOICE) {
-            contenidoMensaje = '🎵 [Audio]';
+            await canal.send(`${encabezado} : ${msg.body}`);
+
+        } else if (msg.hasMedia) {
+            const media = await msg.downloadMedia();
+            if (!media) {
+                await canal.send(`${encabezado} : [No se pudo descargar el archivo]`);
+                return;
+            }
+
+            const buffer = Buffer.from(media.data, 'base64');
+
+            let extension = '';
+            let descripcion = '';
+
+            if (msg.type === MessageTypes.IMAGE) {
+                extension = media.mimetype.includes('png') ? 'png' : 'jpg';
+                descripcion = msg.body ? ` : ${msg.body}` : ' : 📷 [Imagen]';
+            } else if (msg.type === MessageTypes.VIDEO) {
+                extension = 'mp4';
+                descripcion = msg.body ? ` : ${msg.body}` : ' : 🎥 [Video]';
+            } else if (msg.type === MessageTypes.AUDIO) {
+                extension = 'mp3';
+                descripcion = ' : 🎵 [Audio]';
+            } else if (msg.type === MessageTypes.VOICE) {
+                extension = 'ogg';
+                descripcion = ' : 🎵 [Nota de voz]';
+            } else if (msg.type === MessageTypes.STICKER) {
+                extension = 'webp';
+                descripcion = ' : 🎭 [Sticker]';
+            } else if (msg.type === MessageTypes.DOCUMENT) {
+                extension = media.filename ? media.filename.split('.').pop() : 'bin';
+                descripcion = ` : 📄 [Documento: ${media.filename || 'archivo'}]`;
+            } else {
+                extension = 'bin';
+                descripcion = ` : [${msg.type}]`;
+            }
+
+            const nombreArchivo = media.filename || `archivo.${extension}`;
+            const attachment = new AttachmentBuilder(buffer, { name: nombreArchivo });
+
+            await canal.send({
+                content: `${encabezado}${descripcion}`,
+                files: [attachment]
+            });
+
         } else if (msg.type === MessageTypes.STICKER) {
-            contenidoMensaje = '🎭 [Sticker]';
-        } else if (msg.type === MessageTypes.DOCUMENT) {
-            contenidoMensaje = '📄 [Documento]';
+            const media = await msg.downloadMedia();
+            if (media) {
+                const buffer = Buffer.from(media.data, 'base64');
+                const attachment = new AttachmentBuilder(buffer, { name: 'sticker.webp' });
+                await canal.send({ content: `${encabezado} : 🎭 [Sticker]`, files: [attachment] });
+            }
         } else {
-            contenidoMensaje = `[${msg.type}]`;
+            await canal.send(`${encabezado} : [${msg.type}]`);
         }
 
-        const canal = await discordClient.channels.fetch(DISCORD_CANAL_ID);
-        if (canal) {
-            await canal.send(`📩 **Mensaje de: ${nombreContacto}** : ${contenidoMensaje}`);
-        }
     } catch (error) {
         console.error('Error monitoreando mensaje:', error);
     }
@@ -98,13 +139,13 @@ discordClient.on('messageCreate', async (message) => {
 
     if (contenido === '!silencio') {
         silencio = true;
-        message.reply('🔇 Modo silencio activado — ya no recibirás mensajes de los contactos.');
+        message.reply('🔇 Modo silencio activado.');
         return;
     }
 
     if (contenido === '!hablar') {
         silencio = false;
-        message.reply('🔊 Modo hablar activado — volverás a recibir mensajes de los contactos.');
+        message.reply('🔊 Modo hablar activado.');
         return;
     }
 
