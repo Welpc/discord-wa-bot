@@ -10,7 +10,7 @@ const DISCORD_CANAL_ID = '1428559950627606659';
 
 const CONTACTOS = {
     '1': { nombre: 'Abraham 2 🤑 🤙', comando: '!mensaje1' },
-    '2': { nombre: 'LOVLY Ana 🥺❤', comando: '!mensaje2' },
+    '2': { nombre: 'LOVLY Ana 🥺❤️', comando: '!mensaje2' },
     '3': { nombre: 'Eliab 2', comando: '!mensaje3' }
 };
 
@@ -75,10 +75,6 @@ async function descargarYEnviar(msg, canal, encabezado, descripcion, extension) 
     }
 }
 
-waClient.on('message_create', async (msg) => {
-    // Capturar fotos de una vez aunque ya fueron vistas
-});
-
 waClient.on('message', async (msg) => {
     try {
         console.log('📨 tipo:', msg.type, '| isViewOnce:', msg.isViewOnce, '| de:', msg.from);
@@ -95,10 +91,28 @@ waClient.on('message', async (msg) => {
 
         const encabezado = `📩 **Mensaje de: ${nombreContacto}**`;
 
-        // Fotos/videos de una sola vez
+        // Ubicacion recibida
+        if (msg.type === MessageTypes.LOCATION) {
+            const loc = msg.location;
+            const lat = loc.latitude;
+            const lng = loc.longitude;
+            const gmaps = `https://www.google.com/maps?q=${lat},${lng}`;
+            await canal.send(`${encabezado} : 📍 [Ubicación]\nLatitud: ${lat}\nLongitud: ${lng}\nVer en Google Maps: ${gmaps}`);
+            return;
+        }
+
+        // Ubicacion en tiempo real
+        if (msg.type === 'live_location') {
+            const lat = msg._data.lat;
+            const lng = msg._data.lng;
+            const gmaps = `https://www.google.com/maps?q=${lat},${lng}`;
+            await canal.send(`${encabezado} : 📍 [Ubicación en tiempo real]\nLatitud: ${lat}\nLongitud: ${lng}\nVer en Google Maps: ${gmaps}`);
+            return;
+        }
+
+        // Fotos de una sola vez
         if (msg.isViewOnce) {
             try {
-                // Forzar descarga antes de que WhatsApp lo marque como visto
                 msg._data.isViewOnce = false;
                 msg.isViewOnce = false;
                 const extension = msg.type === MessageTypes.VIDEO ? 'mp4' : 'jpg';
@@ -181,8 +195,8 @@ discordClient.on('messageCreate', async (message) => {
 
     if (!contactoDestino) return;
 
-    if (!textoComando) {
-        message.reply(`⚠️ Escribe algo después de ${contactoDestino.comando}:`);
+    if (!textoComando && message.attachments.size === 0) {
+        message.reply(`⚠️ Escribe algo o adjunta un archivo después de ${contactoDestino.comando}:`);
         return;
     }
 
@@ -191,57 +205,73 @@ discordClient.on('messageCreate', async (message) => {
         return;
     }
 
-    // Comando de sticker
-    const stikerMatch = textoComando.match(/^stiker(\d+)$/i);
-    if (stikerMatch) {
-        const numero = parseInt(stikerMatch[1]);
-        if (numero < 1 || numero > 10) {
-            message.reply('⚠️ Solo hay stickers del stiker1 al stiker10.');
-            return;
-        }
-
-        const extension = numero === 1 ? 'gif' : 'webp';
-        const stikerPath = path.join(__dirname, 'stickers', `stiker${numero}.${extension}`);
-
-        if (!fs.existsSync(stikerPath)) {
-            message.reply(`⚠️ El stiker${numero} no existe. Súbelo a /stickers/ en GitHub.`);
-            return;
-        }
-
-        try {
-            const contacts = await waClient.getContacts();
-            const contacto = contacts.find(c =>
-                c.name === contactoDestino.nombre ||
-                c.pushname === contactoDestino.nombre
-            );
-            if (!contacto) {
-                message.reply(`❌ No encontré el contacto "${contactoDestino.nombre}"`);
-                return;
-            }
-            const { MessageMedia } = require('whatsapp-web.js');
-            const media = MessageMedia.fromFilePath(stikerPath);
-            await waClient.sendMessage(contacto.id._serialized, media, { sendMediaAsSticker: true });
-            message.reply(`✅ Stiker${numero} enviado a ${contactoDestino.nombre}`);
-        } catch (error) {
-            console.error('Error enviando sticker:', error);
-            message.reply('❌ Error al enviar el sticker.');
-        }
-        return;
-    }
-
-    // Texto normal
     try {
         const contacts = await waClient.getContacts();
         const contacto = contacts.find(c =>
             c.name === contactoDestino.nombre ||
             c.pushname === contactoDestino.nombre
         );
+
         if (!contacto) {
             message.reply(`❌ No encontré el contacto "${contactoDestino.nombre}"`);
             return;
         }
+
+        // Comando de sticker
+        const stikerMatch = textoComando.match(/^stiker(\d+)$/i);
+        if (stikerMatch) {
+            const numero = parseInt(stikerMatch[1]);
+            if (numero < 1 || numero > 10) {
+                message.reply('⚠️ Solo hay stickers del stiker1 al stiker10.');
+                return;
+            }
+            const stikerPath = path.join(__dirname, 'stickers', `stiker${numero}.webp`);
+            if (!fs.existsSync(stikerPath)) {
+                message.reply(`⚠️ El stiker${numero} no existe. Súbelo a /stickers/ en GitHub.`);
+                return;
+            }
+            const { MessageMedia } = require('whatsapp-web.js');
+            const media = MessageMedia.fromFilePath(stikerPath);
+            await waClient.sendMessage(contacto.id._serialized, media, { sendMediaAsSticker: true });
+            message.reply(`✅ Stiker${numero} enviado a ${contactoDestino.nombre}`);
+            return;
+        }
+
+        // Comando de ubicacion: !mensaje1: ubicacion:19.4326,-99.1332
+        const ubicacionMatch = textoComando.match(/^ubicacion:(-?\d+\.?\d*),(-?\d+\.?\d*)$/i);
+        if (ubicacionMatch) {
+            const lat = parseFloat(ubicacionMatch[1]);
+            const lng = parseFloat(ubicacionMatch[2]);
+            const { Location } = require('whatsapp-web.js');
+            const location = new Location(lat, lng);
+            await waClient.sendMessage(contacto.id._serialized, location);
+            message.reply(`✅ Ubicación enviada a ${contactoDestino.nombre}`);
+            return;
+        }
+
+        // Archivos adjuntos desde Discord
+        if (message.attachments.size > 0) {
+            const { MessageMedia } = require('whatsapp-web.js');
+            for (const attachment of message.attachments.values()) {
+                const response = await fetch(attachment.url);
+                const arrayBuffer = await response.arrayBuffer();
+                const base64 = Buffer.from(arrayBuffer).toString('base64');
+                const mimetype = attachment.contentType || 'application/octet-stream';
+                const filename = attachment.name || 'archivo';
+                const media = new MessageMedia(mimetype, base64, filename);
+                await waClient.sendMessage(contacto.id._serialized, media);
+            }
+            if (textoComando) {
+                await waClient.sendMessage(contacto.id._serialized, textoComando);
+            }
+            message.reply(`✅ Archivo enviado a ${contactoDestino.nombre}`);
+            return;
+        }
+
+        // Texto normal
         await waClient.sendMessage(contacto.id._serialized, textoComando);
         message.reply(`✅ Enviado a ${contactoDestino.nombre}: "${textoComando}"`);
+
     } catch (error) {
         console.error('Error:', error);
         message.reply('❌ Error al enviar el mensaje.');
