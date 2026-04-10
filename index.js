@@ -9,6 +9,7 @@ const waClient = new WAClient({
     authStrategy: new LocalAuth(),
     puppeteer: {
         headless: true,
+        executablePath: '/run/current-system/sw/bin/chromium',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -16,6 +17,7 @@ const waClient = new WAClient({
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
+            '--single-process',
             '--disable-gpu'
         ]
     }
