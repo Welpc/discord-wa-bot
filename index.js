@@ -4,7 +4,7 @@ const { AttachmentBuilder } = require('discord.js');
 const qrcode = require('qrcode-terminal');
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const DISCORD_CANAL_ID = process.env.CANAL_ID;
+const DISCORD_CANAL_ID = '1428559950627606659';
 
 const CONTACTOS = {
     '1': { nombre: 'Abraham 2 🤑 🤙', comando: '!mensaje1' },
@@ -83,7 +83,6 @@ waClient.on('message', async (msg) => {
             }
 
             const buffer = Buffer.from(media.data, 'base64');
-
             let extension = '';
             let descripcion = '';
 
@@ -118,13 +117,6 @@ waClient.on('message', async (msg) => {
                 files: [attachment]
             });
 
-        } else if (msg.type === MessageTypes.STICKER) {
-            const media = await msg.downloadMedia();
-            if (media) {
-                const buffer = Buffer.from(media.data, 'base64');
-                const attachment = new AttachmentBuilder(buffer, { name: 'sticker.webp' });
-                await canal.send({ content: `${encabezado} : 🎭 [Sticker]`, files: [attachment] });
-            }
         } else {
             await canal.send(`${encabezado} : [${msg.type}]`);
         }
