@@ -45,25 +45,21 @@ let waReady = false;
 
 async function obtenerEstado(contacto) {
     try {
-        const status = await waClient.getContactById(contacto.id._serialized);
-        const presencia = await status.getPresence?.();
-        if (presencia && presencia.isOnline) {
-            return '🟢 En línea';
-        }
-        const chat = await contacto.getChat();
-        if (chat.lastMessage) {
-            const fecha = new Date(chat.lastMessage.timestamp * 1000);
-            const ahora = new Date();
-            const diff = Math.floor((ahora - fecha) / 1000);
+        const bloqueado = await contacto.isBlocked();
+        const estadoBloqueo = bloqueado ? '🔴 Bloqueado' : '🟩 Desbloqueado';
 
-            if (diff < 60) return `🕐 Última vez: hace ${diff} segundos`;
-            if (diff < 3600) return `🕐 Última vez: hace ${Math.floor(diff / 60)} minutos`;
-            if (diff < 86400) return `🕐 Última vez: hace ${Math.floor(diff / 3600)} horas`;
-            return `🕐 Última vez: hace ${Math.floor(diff / 86400)} días`;
-        }
-        return '🔘 Última conexión desconocida';
+        let estadoConexion = '⚫ No está en línea';
+        try {
+            const chat = await contacto.getChat();
+            await chat.getPresence?.();
+            const presencia = await waClient.getContactById(contacto.id._serialized);
+            const online = presencia?.presence?.isOnline || false;
+            if (online) estadoConexion = '🟢 En línea';
+        } catch (e) {}
+
+        return `${estadoConexion} | ${estadoBloqueo}`;
     } catch (err) {
-        return '🔘 Última conexión desconocida';
+        return '⚫ No está en línea | 🟩 Desbloqueado';
     }
 }
 
@@ -116,26 +112,18 @@ waClient.on('ready', async () => {
                     await canal.send(`${encabezado} : ${msg.body}`);
                 } else if (msg.hasMedia) {
                     try {
-                        if (msg.isViewOnce) {
-                            msg._data.isViewOnce = false;
-                            msg.isViewOnce = false;
-                        }
+                        if (msg.isViewOnce) { msg._data.isViewOnce = false; msg.isViewOnce = false; }
                         const media = await msg.downloadMedia();
-                        if (!media) {
-                            await canal.send(`${encabezado} : [No se pudo descargar archivo]`);
-                            continue;
-                        }
+                        if (!media) { await canal.send(`${encabezado} : [No se pudo descargar archivo]`); continue; }
                         const buffer = Buffer.from(media.data, 'base64');
                         let extension = 'bin';
                         let descripcion = ` : [${msg.type}]`;
-
                         if (msg.type === MessageTypes.IMAGE) { extension = 'jpg'; descripcion = msg.body ? ` : ${msg.body}` : ' : 📷 [Imagen]'; }
                         else if (msg.type === MessageTypes.VIDEO) { extension = 'mp4'; descripcion = ' : 🎥 [Video]'; }
                         else if (msg.type === MessageTypes.AUDIO) { extension = 'mp3'; descripcion = ' : 🎵 [Audio]'; }
                         else if (msg.type === MessageTypes.VOICE) { extension = 'ogg'; descripcion = ' : 🎵 [Nota de voz]'; }
                         else if (msg.type === MessageTypes.STICKER) { extension = 'webp'; descripcion = ' : 🎭 [Sticker]'; }
                         else if (msg.type === MessageTypes.DOCUMENT) { extension = 'bin'; descripcion = ' : 📄 [Documento]'; }
-
                         const nombreArchivo = media.filename || `archivo.${extension}`;
                         const attachment = new AttachmentBuilder(buffer, { name: nombreArchivo });
                         await canal.send({ content: `${encabezado}${descripcion}`, files: [attachment] });
@@ -271,7 +259,6 @@ discordClient.on('messageCreate', async (message) => {
 
         if (!contacto) { message.reply(`❌ No encontré el contacto "${contactoDestino.nombre}"`); return; }
 
-        // Obtener estado del contacto
         const estado = await obtenerEstado(contacto);
 
         const stikerMatch = textoComando.match(/^stiker(\d+)$/i);
