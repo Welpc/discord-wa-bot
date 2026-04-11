@@ -43,6 +43,30 @@ const discordClient = new DiscordClient({
 
 let waReady = false;
 
+async function obtenerEstado(contacto) {
+    try {
+        const status = await waClient.getContactById(contacto.id._serialized);
+        const presencia = await status.getPresence?.();
+        if (presencia && presencia.isOnline) {
+            return '🟢 En línea';
+        }
+        const chat = await contacto.getChat();
+        if (chat.lastMessage) {
+            const fecha = new Date(chat.lastMessage.timestamp * 1000);
+            const ahora = new Date();
+            const diff = Math.floor((ahora - fecha) / 1000);
+
+            if (diff < 60) return `🕐 Última vez: hace ${diff} segundos`;
+            if (diff < 3600) return `🕐 Última vez: hace ${Math.floor(diff / 60)} minutos`;
+            if (diff < 86400) return `🕐 Última vez: hace ${Math.floor(diff / 3600)} horas`;
+            return `🕐 Última vez: hace ${Math.floor(diff / 86400)} días`;
+        }
+        return '🔘 Última conexión desconocida';
+    } catch (err) {
+        return '🔘 Última conexión desconocida';
+    }
+}
+
 waClient.on('qr', (qr) => {
     console.log('📱 Escanea este QR con tu WhatsApp:');
     qrcode.generate(qr, { small: true });
@@ -52,7 +76,6 @@ waClient.on('ready', async () => {
     console.log('✅ WhatsApp conectado!');
     waReady = true;
 
-    // Revisar mensajes pendientes al iniciar
     try {
         const canal = await discordClient.channels.fetch(DISCORD_CANAL_ID);
         if (!canal) return;
@@ -106,25 +129,12 @@ waClient.on('ready', async () => {
                         let extension = 'bin';
                         let descripcion = ` : [${msg.type}]`;
 
-                        if (msg.type === MessageTypes.IMAGE) {
-                            extension = 'jpg';
-                            descripcion = msg.body ? ` : ${msg.body}` : ' : 📷 [Imagen]';
-                        } else if (msg.type === MessageTypes.VIDEO) {
-                            extension = 'mp4';
-                            descripcion = ' : 🎥 [Video]';
-                        } else if (msg.type === MessageTypes.AUDIO) {
-                            extension = 'mp3';
-                            descripcion = ' : 🎵 [Audio]';
-                        } else if (msg.type === MessageTypes.VOICE) {
-                            extension = 'ogg';
-                            descripcion = ' : 🎵 [Nota de voz]';
-                        } else if (msg.type === MessageTypes.STICKER) {
-                            extension = 'webp';
-                            descripcion = ' : 🎭 [Sticker]';
-                        } else if (msg.type === MessageTypes.DOCUMENT) {
-                            extension = 'bin';
-                            descripcion = ` : 📄 [Documento]`;
-                        }
+                        if (msg.type === MessageTypes.IMAGE) { extension = 'jpg'; descripcion = msg.body ? ` : ${msg.body}` : ' : 📷 [Imagen]'; }
+                        else if (msg.type === MessageTypes.VIDEO) { extension = 'mp4'; descripcion = ' : 🎥 [Video]'; }
+                        else if (msg.type === MessageTypes.AUDIO) { extension = 'mp3'; descripcion = ' : 🎵 [Audio]'; }
+                        else if (msg.type === MessageTypes.VOICE) { extension = 'ogg'; descripcion = ' : 🎵 [Nota de voz]'; }
+                        else if (msg.type === MessageTypes.STICKER) { extension = 'webp'; descripcion = ' : 🎭 [Sticker]'; }
+                        else if (msg.type === MessageTypes.DOCUMENT) { extension = 'bin'; descripcion = ' : 📄 [Documento]'; }
 
                         const nombreArchivo = media.filename || `archivo.${extension}`;
                         const attachment = new AttachmentBuilder(buffer, { name: nombreArchivo });
@@ -136,13 +146,10 @@ waClient.on('ready', async () => {
                     await canal.send(`${encabezado} : [${msg.type}]`);
                 }
             }
-
             await chat.sendSeen();
         }
 
-        if (!hayPendientes) {
-            console.log('✅ No hay mensajes pendientes.');
-        }
+        if (!hayPendientes) console.log('✅ No hay mensajes pendientes.');
 
     } catch (error) {
         console.error('Error revisando mensajes pendientes:', error);
@@ -157,23 +164,18 @@ waClient.on('disconnected', () => {
 async function descargarYEnviar(msg, canal, encabezado, descripcion, extension) {
     try {
         const media = await msg.downloadMedia();
-        if (!media) {
-            await canal.send(`${encabezado} : [No se pudo descargar]`);
-            return;
-        }
+        if (!media) { await canal.send(`${encabezado} : [No se pudo descargar]`); return; }
         const buffer = Buffer.from(media.data, 'base64');
         const nombreArchivo = media.filename || `archivo.${extension}`;
         const attachment = new AttachmentBuilder(buffer, { name: nombreArchivo });
         await canal.send({ content: `${encabezado}${descripcion}`, files: [attachment] });
     } catch (err) {
-        console.error('Error descargando:', err);
         await canal.send(`${encabezado} : [Error al descargar archivo]`);
     }
 }
 
 waClient.on('message', async (msg) => {
     try {
-        console.log('📨 tipo:', msg.type, '| isViewOnce:', msg.isViewOnce, '| de:', msg.from);
         if (silencio) return;
 
         const contact = await msg.getContact();
@@ -221,27 +223,12 @@ waClient.on('message', async (msg) => {
         } else if (msg.hasMedia) {
             let extension = 'bin';
             let descripcion = ` : [${msg.type}]`;
-
-            if (msg.type === MessageTypes.IMAGE) {
-                extension = 'jpg';
-                descripcion = msg.body ? ` : ${msg.body}` : ' : 📷 [Imagen]';
-            } else if (msg.type === MessageTypes.VIDEO) {
-                extension = 'mp4';
-                descripcion = msg.body ? ` : ${msg.body}` : ' : 🎥 [Video]';
-            } else if (msg.type === MessageTypes.AUDIO) {
-                extension = 'mp3';
-                descripcion = ' : 🎵 [Audio]';
-            } else if (msg.type === MessageTypes.VOICE) {
-                extension = 'ogg';
-                descripcion = ' : 🎵 [Nota de voz]';
-            } else if (msg.type === MessageTypes.STICKER) {
-                extension = 'webp';
-                descripcion = ' : 🎭 [Sticker]';
-            } else if (msg.type === MessageTypes.DOCUMENT) {
-                extension = 'bin';
-                descripcion = ` : 📄 [Documento]`;
-            }
-
+            if (msg.type === MessageTypes.IMAGE) { extension = 'jpg'; descripcion = msg.body ? ` : ${msg.body}` : ' : 📷 [Imagen]'; }
+            else if (msg.type === MessageTypes.VIDEO) { extension = 'mp4'; descripcion = msg.body ? ` : ${msg.body}` : ' : 🎥 [Video]'; }
+            else if (msg.type === MessageTypes.AUDIO) { extension = 'mp3'; descripcion = ' : 🎵 [Audio]'; }
+            else if (msg.type === MessageTypes.VOICE) { extension = 'ogg'; descripcion = ' : 🎵 [Nota de voz]'; }
+            else if (msg.type === MessageTypes.STICKER) { extension = 'webp'; descripcion = ' : 🎭 [Sticker]'; }
+            else if (msg.type === MessageTypes.DOCUMENT) { extension = 'bin'; descripcion = ' : 📄 [Documento]'; }
             await descargarYEnviar(msg, canal, encabezado, descripcion, extension);
         } else {
             await canal.send(`${encabezado} : [${msg.type}]`);
@@ -256,31 +243,15 @@ discordClient.on('messageCreate', async (message) => {
     if (message.author.bot) return;
     const contenido = message.content.trim();
 
-    if (contenido === '!silencio') {
-        silencio = true;
-        message.reply('🔇 Modo silencio activado.');
-        return;
-    }
-
-    if (contenido === '!hablar') {
-        silencio = false;
-        message.reply('🔊 Modo hablar activado.');
-        return;
-    }
+    if (contenido === '!silencio') { silencio = true; message.reply('🔇 Modo silencio activado.'); return; }
+    if (contenido === '!hablar') { silencio = false; message.reply('🔊 Modo hablar activado.'); return; }
 
     let contactoDestino = null;
     let textoComando = '';
 
-    if (contenido.startsWith('!mensaje1')) {
-        contactoDestino = CONTACTOS['1'];
-        textoComando = contenido.slice('!mensaje1'.length).replace(/^:\s*/, '').trim();
-    } else if (contenido.startsWith('!mensaje2')) {
-        contactoDestino = CONTACTOS['2'];
-        textoComando = contenido.slice('!mensaje2'.length).replace(/^:\s*/, '').trim();
-    } else if (contenido.startsWith('!mensaje3')) {
-        contactoDestino = CONTACTOS['3'];
-        textoComando = contenido.slice('!mensaje3'.length).replace(/^:\s*/, '').trim();
-    }
+    if (contenido.startsWith('!mensaje1')) { contactoDestino = CONTACTOS['1']; textoComando = contenido.slice('!mensaje1'.length).replace(/^:\s*/, '').trim(); }
+    else if (contenido.startsWith('!mensaje2')) { contactoDestino = CONTACTOS['2']; textoComando = contenido.slice('!mensaje2'.length).replace(/^:\s*/, '').trim(); }
+    else if (contenido.startsWith('!mensaje3')) { contactoDestino = CONTACTOS['3']; textoComando = contenido.slice('!mensaje3'.length).replace(/^:\s*/, '').trim(); }
 
     if (!contactoDestino) return;
 
@@ -289,10 +260,7 @@ discordClient.on('messageCreate', async (message) => {
         return;
     }
 
-    if (!waReady) {
-        message.reply('❌ WhatsApp no está conectado todavía.');
-        return;
-    }
+    if (!waReady) { message.reply('❌ WhatsApp no está conectado todavía.'); return; }
 
     try {
         const contacts = await waClient.getContacts();
@@ -301,27 +269,21 @@ discordClient.on('messageCreate', async (message) => {
             c.pushname === contactoDestino.nombre
         );
 
-        if (!contacto) {
-            message.reply(`❌ No encontré el contacto "${contactoDestino.nombre}"`);
-            return;
-        }
+        if (!contacto) { message.reply(`❌ No encontré el contacto "${contactoDestino.nombre}"`); return; }
+
+        // Obtener estado del contacto
+        const estado = await obtenerEstado(contacto);
 
         const stikerMatch = textoComando.match(/^stiker(\d+)$/i);
         if (stikerMatch) {
             const numero = parseInt(stikerMatch[1]);
-            if (numero < 1 || numero > 10) {
-                message.reply('⚠️ Solo hay stickers del stiker1 al stiker10.');
-                return;
-            }
+            if (numero < 1 || numero > 10) { message.reply('⚠️ Solo hay stickers del stiker1 al stiker10.'); return; }
             const stikerPath = path.join(__dirname, 'stickers', `stiker${numero}.webp`);
-            if (!fs.existsSync(stikerPath)) {
-                message.reply(`⚠️ El stiker${numero} no existe. Súbelo a /stickers/ en GitHub.`);
-                return;
-            }
+            if (!fs.existsSync(stikerPath)) { message.reply(`⚠️ El stiker${numero} no existe.`); return; }
             const { MessageMedia } = require('whatsapp-web.js');
             const media = MessageMedia.fromFilePath(stikerPath);
             await waClient.sendMessage(contacto.id._serialized, media, { sendMediaAsSticker: true });
-            message.reply(`✅ Stiker${numero} enviado a ${contactoDestino.nombre}`);
+            message.reply(`✅ Stiker${numero} enviado a ${contactoDestino.nombre}\n${estado}`);
             return;
         }
 
@@ -332,7 +294,7 @@ discordClient.on('messageCreate', async (message) => {
             const { Location } = require('whatsapp-web.js');
             const location = new Location(lat, lng);
             await waClient.sendMessage(contacto.id._serialized, location);
-            message.reply(`✅ Ubicación enviada a ${contactoDestino.nombre}`);
+            message.reply(`✅ Ubicación enviada a ${contactoDestino.nombre}\n${estado}`);
             return;
         }
 
@@ -347,15 +309,13 @@ discordClient.on('messageCreate', async (message) => {
                 const media = new MessageMedia(mimetype, base64, filename);
                 await waClient.sendMessage(contacto.id._serialized, media);
             }
-            if (textoComando) {
-                await waClient.sendMessage(contacto.id._serialized, textoComando);
-            }
-            message.reply(`✅ Archivo enviado a ${contactoDestino.nombre}`);
+            if (textoComando) await waClient.sendMessage(contacto.id._serialized, textoComando);
+            message.reply(`✅ Archivo enviado a ${contactoDestino.nombre}\n${estado}`);
             return;
         }
 
         await waClient.sendMessage(contacto.id._serialized, textoComando);
-        message.reply(`✅ Enviado a ${contactoDestino.nombre}: "${textoComando}"`);
+        message.reply(`✅ Enviado a ${contactoDestino.nombre}: "${textoComando}"\n${estado}`);
 
     } catch (error) {
         console.error('Error:', error);
