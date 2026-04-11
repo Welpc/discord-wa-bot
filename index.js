@@ -48,9 +48,105 @@ waClient.on('qr', (qr) => {
     qrcode.generate(qr, { small: true });
 });
 
-waClient.on('ready', () => {
+waClient.on('ready', async () => {
     console.log('✅ WhatsApp conectado!');
     waReady = true;
+
+    // Revisar mensajes pendientes al iniciar
+    try {
+        const canal = await discordClient.channels.fetch(DISCORD_CANAL_ID);
+        if (!canal) return;
+
+        const chats = await waClient.getChats();
+        let hayPendientes = false;
+
+        for (const chat of chats) {
+            if (chat.unreadCount <= 0) continue;
+
+            const contact = await chat.getContact();
+            const nombreContacto = contact.name || contact.pushname || contact.number;
+
+            const esMonitoreado = Object.values(CONTACTOS).some(c => c.nombre === nombreContacto);
+            if (!esMonitoreado) continue;
+
+            if (!hayPendientes) {
+                await canal.send(`⚠️ **Mensajes pendientes mientras el bot estuvo apagado:**`);
+                hayPendientes = true;
+            }
+
+            const mensajes = await chat.fetchMessages({ limit: chat.unreadCount });
+
+            for (const msg of mensajes) {
+                if (msg.fromMe) continue;
+
+                const encabezado = `📩 **Mensaje de: ${nombreContacto}**`;
+
+                if (msg.type === MessageTypes.LOCATION) {
+                    const lat = msg.location.latitude;
+                    const lng = msg.location.longitude;
+                    const gmaps = `https://www.google.com/maps?q=${lat},${lng}`;
+                    await canal.send(`${encabezado} : 📍 [Ubicación]\n${gmaps}`);
+                    continue;
+                }
+
+                if (msg.type === MessageTypes.TEXT) {
+                    await canal.send(`${encabezado} : ${msg.body}`);
+                } else if (msg.hasMedia) {
+                    try {
+                        if (msg.isViewOnce) {
+                            msg._data.isViewOnce = false;
+                            msg.isViewOnce = false;
+                        }
+                        const media = await msg.downloadMedia();
+                        if (!media) {
+                            await canal.send(`${encabezado} : [No se pudo descargar archivo]`);
+                            continue;
+                        }
+                        const buffer = Buffer.from(media.data, 'base64');
+                        let extension = 'bin';
+                        let descripcion = ` : [${msg.type}]`;
+
+                        if (msg.type === MessageTypes.IMAGE) {
+                            extension = 'jpg';
+                            descripcion = msg.body ? ` : ${msg.body}` : ' : 📷 [Imagen]';
+                        } else if (msg.type === MessageTypes.VIDEO) {
+                            extension = 'mp4';
+                            descripcion = ' : 🎥 [Video]';
+                        } else if (msg.type === MessageTypes.AUDIO) {
+                            extension = 'mp3';
+                            descripcion = ' : 🎵 [Audio]';
+                        } else if (msg.type === MessageTypes.VOICE) {
+                            extension = 'ogg';
+                            descripcion = ' : 🎵 [Nota de voz]';
+                        } else if (msg.type === MessageTypes.STICKER) {
+                            extension = 'webp';
+                            descripcion = ' : 🎭 [Sticker]';
+                        } else if (msg.type === MessageTypes.DOCUMENT) {
+                            extension = 'bin';
+                            descripcion = ` : 📄 [Documento]`;
+                        }
+
+                        const nombreArchivo = media.filename || `archivo.${extension}`;
+                        const attachment = new AttachmentBuilder(buffer, { name: nombreArchivo });
+                        await canal.send({ content: `${encabezado}${descripcion}`, files: [attachment] });
+                    } catch (err) {
+                        await canal.send(`${encabezado} : [Error al descargar archivo]`);
+                    }
+                } else {
+                    await canal.send(`${encabezado} : [${msg.type}]`);
+                }
+            }
+
+            await chat.sendSeen();
+        }
+
+        if (!hayPendientes) {
+            console.log('✅ No hay mensajes pendientes.');
+        }
+
+    } catch (error) {
+        console.error('Error revisando mensajes pendientes:', error);
+    }
 });
 
 waClient.on('disconnected', () => {
@@ -91,26 +187,22 @@ waClient.on('message', async (msg) => {
 
         const encabezado = `📩 **Mensaje de: ${nombreContacto}**`;
 
-        // Ubicacion recibida
         if (msg.type === MessageTypes.LOCATION) {
-            const loc = msg.location;
-            const lat = loc.latitude;
-            const lng = loc.longitude;
+            const lat = msg.location.latitude;
+            const lng = msg.location.longitude;
             const gmaps = `https://www.google.com/maps?q=${lat},${lng}`;
-            await canal.send(`${encabezado} : 📍 [Ubicación]\nLatitud: ${lat}\nLongitud: ${lng}\nVer en Google Maps: ${gmaps}`);
+            await canal.send(`${encabezado} : 📍 [Ubicación]\n${gmaps}`);
             return;
         }
 
-        // Ubicacion en tiempo real
         if (msg.type === 'live_location') {
             const lat = msg._data.lat;
             const lng = msg._data.lng;
             const gmaps = `https://www.google.com/maps?q=${lat},${lng}`;
-            await canal.send(`${encabezado} : 📍 [Ubicación en tiempo real]\nLatitud: ${lat}\nLongitud: ${lng}\nVer en Google Maps: ${gmaps}`);
+            await canal.send(`${encabezado} : 📍 [Ubicación en tiempo real]\n${gmaps}`);
             return;
         }
 
-        // Fotos de una sola vez
         if (msg.isViewOnce) {
             try {
                 msg._data.isViewOnce = false;
@@ -119,7 +211,6 @@ waClient.on('message', async (msg) => {
                 const descripcion = msg.type === MessageTypes.VIDEO ? ' : 👁️ [Video de una vez]' : ' : 👁️ [Foto de una vez]';
                 await descargarYEnviar(msg, canal, encabezado, descripcion, extension);
             } catch (err) {
-                console.error('Error con foto de una vez:', err);
                 await canal.send(`${encabezado} : 👁️ [Foto/Video de una vez - no se pudo capturar]`);
             }
             return;
@@ -127,7 +218,6 @@ waClient.on('message', async (msg) => {
 
         if (msg.type === MessageTypes.TEXT) {
             await canal.send(`${encabezado} : ${msg.body}`);
-
         } else if (msg.hasMedia) {
             let extension = 'bin';
             let descripcion = ` : [${msg.type}]`;
@@ -153,7 +243,6 @@ waClient.on('message', async (msg) => {
             }
 
             await descargarYEnviar(msg, canal, encabezado, descripcion, extension);
-
         } else {
             await canal.send(`${encabezado} : [${msg.type}]`);
         }
@@ -217,7 +306,6 @@ discordClient.on('messageCreate', async (message) => {
             return;
         }
 
-        // Comando de sticker
         const stikerMatch = textoComando.match(/^stiker(\d+)$/i);
         if (stikerMatch) {
             const numero = parseInt(stikerMatch[1]);
@@ -237,7 +325,6 @@ discordClient.on('messageCreate', async (message) => {
             return;
         }
 
-        // Comando de ubicacion: !mensaje1: ubicacion:19.4326,-99.1332
         const ubicacionMatch = textoComando.match(/^ubicacion:(-?\d+\.?\d*),(-?\d+\.?\d*)$/i);
         if (ubicacionMatch) {
             const lat = parseFloat(ubicacionMatch[1]);
@@ -249,7 +336,6 @@ discordClient.on('messageCreate', async (message) => {
             return;
         }
 
-        // Archivos adjuntos desde Discord
         if (message.attachments.size > 0) {
             const { MessageMedia } = require('whatsapp-web.js');
             for (const attachment of message.attachments.values()) {
@@ -268,7 +354,6 @@ discordClient.on('messageCreate', async (message) => {
             return;
         }
 
-        // Texto normal
         await waClient.sendMessage(contacto.id._serialized, textoComando);
         message.reply(`✅ Enviado a ${contactoDestino.nombre}: "${textoComando}"`);
 
